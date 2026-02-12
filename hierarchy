@@ -1,0 +1,18 @@
+mini_tcp_stack/
+├── Makefile                # 编译脚本
+├── README.md               # 使用说明
+├── topo.py                 # Mininet 拓扑脚本
+├── main.c                  # 主程序
+├── include/
+│   ├── tcp_def.h           # 协议定义
+│   └── tcp_internal.h      # 内部接口
+├── core/
+│   ├── tcp_pcb.c           # PCB 管理
+│   ├── tcp_in.c            # 输入处理
+│   ├── tcp_out.c           # 输出与关闭
+│   ├── tcp_state.c         # 状态机 (FSM)
+│   └── tcp_timer.c         # 定时器
+├── adapter/
+│   └── net_io.c            # Raw Socket 驱动
+└── utils/
+    └── checksum.c          # 校验和算法
