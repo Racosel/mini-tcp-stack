@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <netinet/in.h>
+#include "ringbuf.h"
 
 // TCP 状态枚举
 typedef enum {
@@ -32,6 +33,9 @@ struct my_tcp_hdr {
 };
 
 // 协议控制块 (PCB)
+// include/tcp_def.h
+// ... 保留前面的状态枚举和 tcp_hdr 结构体 ...
+
 struct tcp_pcb {
     struct tcp_pcb *next; 
 
@@ -42,18 +46,20 @@ struct tcp_pcb {
     
     tcp_state_t state;
     
-    // 序列号
-    uint32_t snd_nxt;
-    uint32_t rcv_nxt;
+    // --- 滑动窗口核心变量 ---
+    uint32_t snd_una;    // Send Unacknowledged: 窗口左沿 (最早未确认的序号)
+    uint32_t snd_nxt;    // Send Next: 窗口右沿 (下一个要发送的序号)
+    uint32_t snd_wnd;    // Send Window: 对方的接收窗口大小
     
-    // 重传缓存
-    uint8_t *retrans_buf;
-    uint16_t retrans_len;
-    uint8_t  retrans_flags;
+    uint32_t rcv_nxt;    // Receive Next: 期望收到的下一个序号
+    uint32_t rcv_wnd;    // Receive Window: 本地的接收窗口大小
     
-    // 定时器与控制
-    int      waiting_ack;    // 1=停等阻塞中
-    uint32_t timer_ms;       // 当前倒计时
+    // --- 环形缓冲区 ---
+    struct ringbuf *snd_buf; // 发送缓冲区 (存放应用层写入、尚未确认的数据)
+    struct ringbuf *rcv_buf; // 接收缓冲区 (任务 3.3 将使用)
+    
+    // --- 定时器 ---
+    uint32_t timer_ms;       // 重传倒计时
     uint32_t rto;            // 超时时间设定 (ms)
 };
 
