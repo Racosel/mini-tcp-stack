@@ -13,8 +13,8 @@ void tcp_input(uint8_t *buf, int len);
 // core/tcp_out.c
 void tcp_output(struct tcp_pcb *pcb, uint32_t seq, uint8_t flags, uint8_t *data, int len);
 void tcp_push(struct tcp_pcb *pcb);
-void tcp_send_ctrl(struct tcp_pcb *pcb, uint8_t flags);
 void tcp_write(struct tcp_pcb *pcb, uint8_t *data, int len);
+void tcp_send_ctrl(struct tcp_pcb *pcb, uint8_t flags);
 void tcp_retransmit(struct tcp_pcb *pcb);
 void tcp_close(struct tcp_pcb *pcb);
 

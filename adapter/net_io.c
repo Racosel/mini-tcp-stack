@@ -24,12 +24,13 @@ void net_send(struct tcp_pcb *pcb, void *buf, int len) {
     addr.sin_addr.s_addr = pcb->remote_ip;
     
     // 发送原始数据包 (包含 TCP 头和数据)
-    if (sendto(sockfd, buf, len, 0, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("[Net] Send failed");
+    int ret = sendto(sockfd, buf, len, 0, (struct sockaddr *)&addr, sizeof(addr));
+    if (ret < 0) {
+        perror("[Fatal] sendto failed"); // 如果内核拒绝发包，会在这里打印原因（比如 Network is unreachable）
     }
 }
 
 int net_recv(void *buf, int max_len) {
-    // 接收包含 IP 头的数据
-    return recvfrom(sockfd, buf, max_len, 0, NULL, NULL);
+    // 加上 MSG_DONTWAIT，没包立刻返回 -1，绝不卡死！
+    return recvfrom(sockfd, buf, max_len, MSG_DONTWAIT, NULL, NULL);
 }

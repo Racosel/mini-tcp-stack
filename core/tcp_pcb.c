@@ -9,19 +9,19 @@ struct tcp_pcb *tcp_pcb_new() {
     memset(pcb, 0, sizeof(struct tcp_pcb));
     pcb->rto = 1000; // 默认 1秒超时
     
-    // 初始化环形缓冲区 (分配 4KB)
+    // 初始化环形缓冲区 (4KB)
     pcb->snd_buf = rb_new(4096);
     pcb->rcv_buf = rb_new(4096);
     
     // 初始化窗口大小
-    pcb->rcv_wnd = 4096; // 告诉对方我们能收 4KB
-    pcb->snd_wnd = 1024; // 假设对方初始窗口 1KB (握手后更新)
+    pcb->rcv_wnd = rb_free_space(pcb->rcv_buf); // 动态获取
+    pcb->snd_wnd = 1024; // 初始假设对方有窗口，握手后更新
     
+    // 插入头部
     pcb->next = pcb_list;
     pcb_list = pcb;
     return pcb;
 }
-
 
 struct tcp_pcb *tcp_pcb_find(uint32_t lip, uint16_t lport, uint32_t rip, uint16_t rport) {
     struct tcp_pcb *pcb = pcb_list;

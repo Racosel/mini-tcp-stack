@@ -6,6 +6,7 @@ SRCS = $(foreach dir, $(SRC_DIRS), $(wildcard $(dir)/*.c))
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)
+	dd if=/dev/urandom of=test_send.dat bs=1M count=1
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
@@ -36,6 +37,9 @@ test:
 clean:
 	@echo "--- Cleaning build files ---"
 	rm -f $(OBJS) $(TARGET) test_rb *.o
+
+	@echo "--- Cleaning transitted files ---"
+	rm -f test_send.dat recv_test.dat
 	
 	@echo "--- Cleaning Mininet leftovers ---"
 # 清理 Mininet 拓扑残留

@@ -1,6 +1,32 @@
 #include "tcp_internal.h"
 #include <stdio.h>
 
+// 处理接收到的数据负载
+static void tcp_process_payload(struct tcp_pcb *pcb, uint32_t seq, uint8_t *data, int len) {
+    if (len <= 0) return;
+
+    if (seq == pcb->rcv_nxt) {
+        // 按序到达，写入接收缓冲区
+        int written = rb_write(pcb->rcv_buf, data, len);
+        if (written > 0) {
+            pcb->rcv_nxt += written;
+            pcb->rcv_wnd = rb_free_space(pcb->rcv_buf); // 更新接收窗口
+            printf("[Data] Accepted %d bytes. Next Exp: %u, Win: %u\n", written, pcb->rcv_nxt, pcb->rcv_wnd);
+        }
+        tcp_send_ctrl(pcb, TCP_ACK); // 回复 ACK
+    } 
+    else if (seq < pcb->rcv_nxt) {
+        // 重复包
+        printf("[Data] Duplicate Seq %u < Exp %u. Resending ACK.\n", seq, pcb->rcv_nxt);
+        tcp_send_ctrl(pcb, TCP_ACK);
+    }
+    else {
+        // 乱序包 (直接丢弃，回 ACK 触发对方重传)
+        printf("[Data] Out-of-order Seq %u > Exp %u. Dropping.\n", seq, pcb->rcv_nxt);
+        tcp_send_ctrl(pcb, TCP_ACK); 
+    }
+}
+
 void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
     uint32_t seq = ntohl(tcph->seq);
     uint32_t ack = ntohl(tcph->ack);
@@ -15,19 +41,15 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
         return;
     }
 
-    printf("[State] %d | Recv Flags:0x%02X Seq:%u Ack:%u\n", pcb->state, flags, seq, ack);
-
     switch (pcb->state) {
         case TCP_SYN_SENT:
             if ((flags & TCP_SYN) && (flags & TCP_ACK)) {
-                if (ack == pcb->snd_nxt) { // 之前发SYN已经 snd_nxt++，所以直接比对
+                if (ack == pcb->snd_nxt) {
                     pcb->state = TCP_ESTABLISHED;
-                    pcb->snd_una = ack;     // 关键：握手成功，推进窗口左沿
+                    pcb->snd_una = ack; 
                     pcb->rcv_nxt = seq + 1;
-                    pcb->timer_ms = 0;      
-                    
-                    pcb->snd_wnd = ntohs(tcph->window); // 记录对方通知的窗口
-                    
+                    pcb->timer_ms = 0;
+                    pcb->snd_wnd = ntohs(tcph->window); // 记录对方窗口
                     tcp_send_ctrl(pcb, TCP_ACK);
                     printf(">>> TCP Connection ESTABLISHED <<<\n");
                 }
@@ -36,40 +58,29 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
 
         case TCP_ESTABLISHED:
             if (flags & TCP_ACK) {
-                // 1. 实时更新对方当前的接收能力
                 pcb->snd_wnd = ntohs(tcph->window);
-                
-                // 2. 累计确认：如果 ACK 落在我们的窗口内
                 if (ack > pcb->snd_una && ack <= pcb->snd_nxt) {
-                    uint32_t acked_bytes = ack - pcb->snd_una;
-                    printf("[ACK] %u bytes acked. Rem Wnd: %u\n", acked_bytes, pcb->snd_wnd);
+                    uint32_t acked = ack - pcb->snd_una;
                     
-                    // 从环形缓冲区中“吃掉”已被确认的数据 (释放空间)
-                    int in_buf = rb_used_space(pcb->snd_buf);
-                    int to_pop = (acked_bytes > in_buf) ? in_buf : acked_bytes; // 防止把 SYN/FIN 也当数据吃掉
-                    
-                    if (to_pop > 0) {
+                    // --- 【修复开始】分块读取，防止栈溢出 ---
+                    int to_pop = (acked > (uint32_t)rb_used_space(pcb->snd_buf)) ? rb_used_space(pcb->snd_buf) : acked;
+                    while (to_pop > 0) {
                         uint8_t dummy[1500];
-                        while(to_pop > 0) {
-                            int chunk = to_pop > 1500 ? 1500 : to_pop;
-                            rb_read(pcb->snd_buf, dummy, chunk); // 真实移动 tail 指针
-                            to_pop -= chunk;
-                        }
+                        int chunk = (to_pop > 1500) ? 1500 : to_pop;
+                        rb_read(pcb->snd_buf, dummy, chunk);
+                        to_pop -= chunk;
                     }
+                    // --- 【修复结束】 ---
                     
-                    // 3. 推进窗口左沿
                     pcb->snd_una = ack;
-                    
-                    // 4. 定时器管理
-                    if (pcb->snd_una == pcb->snd_nxt) {
-                        pcb->timer_ms = 0; // 全确认了，关定时器
-                    } else {
-                        pcb->timer_ms = pcb->rto; // 还有在途数据，重置
-                    }
-                    
-                    // 5. 窗口可能腾出空间了，尝试继续推流
+                    pcb->timer_ms = (pcb->snd_una == pcb->snd_nxt) ? 0 : pcb->rto;
                     tcp_push(pcb);
                 }
+            }
+            
+            // 处理接收数据
+            if (payload_len > 0) {
+                tcp_process_payload(pcb, seq, payload, payload_len);
             }
             
             if (flags & TCP_FIN) {
@@ -81,11 +92,12 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
             break;
             
         case TCP_FIN_WAIT_1:
-            if ((flags & TCP_ACK) && (ack == pcb->snd_nxt + 1)) {
-                pcb->snd_nxt++;
+            if ((flags & TCP_ACK) && (ack == pcb->snd_nxt)) {
+                pcb->snd_una = ack;
+                pcb->timer_ms = 0;
                 pcb->state = TCP_FIN_WAIT_2;
             }
-            if (flags & TCP_FIN) { // Simultaneous close
+            if (flags & TCP_FIN) {
                  pcb->rcv_nxt = seq + 1;
                  tcp_send_ctrl(pcb, TCP_ACK);
                  pcb->state = TCP_CLOSING;
@@ -102,15 +114,14 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
             break;
 
         case TCP_LAST_ACK:
-            if ((flags & TCP_ACK) && (ack == pcb->snd_nxt + 1)) {
-                pcb->snd_nxt++;
+            if ((flags & TCP_ACK) && (ack == pcb->snd_nxt)) {
+                pcb->snd_una = ack;
                 pcb->state = TCP_CLOSED;
                 printf(">>> CLOSED <<<\n");
             }
             break;
             
         case TCP_CLOSE_WAIT:
-            // 等待应用层调用 tcp_close()
             break;
             
         default:
