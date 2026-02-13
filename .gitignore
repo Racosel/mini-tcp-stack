@@ -1,0 +1,11 @@
+# 编译生成的文件
+*.o
+mini_tcp
+
+# Mininet 运行产生的临时文件
+*.log
+*.pyc
+
+# 编辑器配置
+.vscode/
+.idea/
