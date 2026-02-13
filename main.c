@@ -36,6 +36,7 @@ int main() {
         tcp_timer_tick(pcb, 10);
         
         // 业务逻辑
+        /*
         if (pcb->state == TCP_ESTABLISHED) {
             if (tick % 200 == 0 && tick < 1000) {
                 char msg[50];
@@ -47,6 +48,16 @@ int main() {
             if (tick == 1000) {
                 tcp_close(pcb);
             }
+        }
+        */
+        // [3.2] Tx 测试点：发送大数据量，触发拆分发送
+        static int data_sent = 0;
+        if (pcb->state == TCP_ESTABLISHED && !data_sent) {
+            // 只要一进入 ESTABLISHED 状态，立刻发送
+            char big_data[2500];
+            memset(big_data, 'A', 2500); 
+            tcp_write(pcb, (uint8_t*)big_data, 2500);
+            data_sent = 1; // 确保只发一次
         }
         
         // 被动关闭响应

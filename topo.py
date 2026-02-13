@@ -22,7 +22,8 @@ def run():
     s1 = net.addSwitch('s1')
     
     info('*** Creating links (10Mbps, 10ms delay)\n')
-    net.addLink(h1, s1, bw=10, delay='10ms')
+    # 修改 topo.py 里的 addLink
+    net.addLink(h1, s1, bw=10, delay='10ms', loss=5) # 增加 5% 丢包
     net.addLink(h2, s1, bw=10, delay='10ms')
     
     net.start()
