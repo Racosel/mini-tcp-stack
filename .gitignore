@@ -10,3 +10,6 @@ test_rb
 # 编辑器配置
 .vscode/
 .idea/
+
+# data
+*.dat
