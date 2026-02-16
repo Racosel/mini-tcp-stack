@@ -71,6 +71,24 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
                         to_pop -= chunk;
                     }
                     // --- 【修复结束】 ---
+
+
+                    // --- [新增] 拥塞控制状态机 ---
+                    if (pcb->cwnd < pcb->ssthresh) {
+                        // 1. 慢启动阶段 (Slow Start): 指数增长
+                        // 每收到一个 ACK，cwnd 增加一个 MSS
+                        pcb->cwnd += TCP_MSS;
+                        printf("[Congestion] Slow Start: cwnd -> %u\n", pcb->cwnd);
+                    } else {
+                        // 2. 拥塞避免阶段 (Congestion Avoidance): 线性增长
+                        // 每个 RTT 增加一个 MSS。
+                        // 近似算法：每收到一个 ACK，增加 MSS * MSS / cwnd
+                        uint32_t increment = (TCP_MSS * TCP_MSS) / pcb->cwnd;
+                        if (increment < 1) increment = 1; // 至少加 1 字节
+                        pcb->cwnd += increment;
+                        printf("[Congestion] Avoidance: cwnd -> %u\n", pcb->cwnd);
+                    }
+                    // ---------------------------
                     
                     pcb->snd_una = ack;
                     pcb->timer_ms = (pcb->snd_una == pcb->snd_nxt) ? 0 : pcb->rto;

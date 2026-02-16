@@ -13,6 +13,10 @@ struct tcp_pcb *tcp_pcb_new() {
     pcb->snd_buf = rb_new(4096);
     pcb->rcv_buf = rb_new(4096);
     
+    // --- 初始化拥塞控制参数 ---
+    pcb->cwnd = TCP_MSS;      // 初始只发 1 个 MSS (慢启动)
+    pcb->ssthresh = 0xFFFF;   // 初始阈值设为无穷大 (65535)
+
     // 初始化窗口大小
     pcb->rcv_wnd = rb_free_space(pcb->rcv_buf); // 动态获取
     pcb->snd_wnd = 1024; // 初始假设对方有窗口，握手后更新

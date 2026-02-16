@@ -19,6 +19,9 @@ typedef enum {
 #define TCP_PSH 0x08
 #define TCP_ACK 0x10
 
+// 统一定义最大报文段大小，方便各文件引用
+#define TCP_MSS 1000
+
 // 自定义 TCP 头部
 struct my_tcp_hdr {
     uint16_t src_port;
@@ -48,6 +51,10 @@ struct tcp_pcb {
     uint32_t snd_nxt;    // 窗口右沿 (下一个要发送的序号)
     uint32_t snd_wnd;    // 对方的接收窗口大小
     struct ringbuf *snd_buf; // 发送缓冲区
+
+    // --- 拥塞控制 (Congestion Control) ---
+    uint32_t cwnd;       // 拥塞窗口 (Congestion Window)
+    uint32_t ssthresh;   // 慢启动阈值 (Slow Start Threshold)
     
     // --- 接收端滑动窗口 (Rx Window) ---
     uint32_t rcv_nxt;    // 期望收到的下一个序号

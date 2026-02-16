@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define TCP_MSS 1000
 
 // 1. 底层发送
 void tcp_output(struct tcp_pcb *pcb, uint32_t seq, uint8_t flags, uint8_t *data, int len) {
@@ -31,9 +30,17 @@ void tcp_output(struct tcp_pcb *pcb, uint32_t seq, uint8_t flags, uint8_t *data,
 
 // 2. 推流引擎
 void tcp_push(struct tcp_pcb *pcb) {
-    uint32_t in_flight = pcb->snd_nxt - pcb->snd_una; 
-    int available_wnd = pcb->snd_wnd - in_flight; 
-    int unsent = rb_used_space(pcb->snd_buf) - in_flight; 
+    uint32_t in_flight = pcb->snd_nxt - pcb->snd_una;
+
+    // --- [修改点] 有效发送窗口 = min(对方接收窗口, 本地拥塞窗口) ---
+    uint32_t effective_wnd = pcb->snd_wnd;
+    if (pcb->cwnd < effective_wnd) {
+        effective_wnd = pcb->cwnd;
+    }
+
+    // 计算可用窗口 (注意防止无符号整数下溢)
+    int available_wnd = (effective_wnd > in_flight) ? (effective_wnd - in_flight) : 0;
+    int unsent = rb_used_space(pcb->snd_buf) - in_flight;
 
     // 只要有数据且对方窗口允许，就一直发
     while (unsent > 0 && available_wnd > 0) {
@@ -76,6 +83,13 @@ void tcp_send_ctrl(struct tcp_pcb *pcb, uint8_t flags) {
 // 5. 超时重传
 void tcp_retransmit(struct tcp_pcb *pcb) {
     printf("[RTO] Timeout! Retransmitting from seq %u...\n", pcb->snd_una);
+    
+    // --- [新增] 超时惩罚：进入慢启动 ---
+    pcb->ssthresh = pcb->cwnd / 2;
+    if (pcb->ssthresh < 2 * TCP_MSS) pcb->ssthresh = 2 * TCP_MSS; // 至少保留 2 MSS
+    pcb->cwnd = TCP_MSS; // 拥塞窗口重置为 1 MSS
+    printf("[RTO] Updated cwnd: %u, ssthresh: %u\n", pcb->cwnd, pcb->ssthresh);
+
     int len = rb_used_space(pcb->snd_buf);
     
     if (len > 0) {
