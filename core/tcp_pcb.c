@@ -25,6 +25,11 @@ struct tcp_pcb *tcp_pcb_new() {
 
     // --- [新增] 初始化乱序链表为空 ---
     pcb->ooo_head = NULL; 
+
+    // --- [新增] 初始化坚持定时器 ---
+    pcb->persist_timer_ms = 0;
+    pcb->persist_backoff = 1;
+
     pcb->rcv_nxt = 0;
 
     // 初始化窗口大小

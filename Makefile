@@ -7,6 +7,7 @@ OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)
 	dd if=/dev/urandom of=test_send.dat bs=1M count=1
+	dd if=/dev/urandom of=linux_send.dat bs=1M count=1
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^

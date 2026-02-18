@@ -62,6 +62,13 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
             if (flags & TCP_ACK) {
                 pcb->snd_wnd = ntohs(tcph->window);
 
+                // --- [新增] 解除零窗口状态 ---
+                if (pcb->snd_wnd > 0 && pcb->persist_timer_ms > 0) {
+                    printf("[ZWP] Window recovered to %u! Stopping persist timer.\n", pcb->snd_wnd);
+                    pcb->persist_timer_ms = 0;
+                    pcb->persist_backoff = 1;
+                }
+
                 // --- 情况 A: 收到新的 ACK (New ACK) ---
                 if (ack > pcb->snd_una && ack <= pcb->snd_nxt) {
                     // [新增] 只要收到新数据确认，重置 dupacks 计数

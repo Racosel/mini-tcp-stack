@@ -42,6 +42,18 @@ void tcp_push(struct tcp_pcb *pcb) {
     int available_wnd = (effective_wnd > in_flight) ? (effective_wnd - in_flight) : 0;
     int unsent = rb_used_space(pcb->snd_buf) - in_flight;
 
+    // --- [新增] 零窗口拦截与探测启动 ---
+    if (pcb->snd_wnd == 0 && unsent > 0) {
+        // 对方窗口为 0，且我们有数据想发
+        if (pcb->persist_timer_ms == 0) {
+            // 启动坚持定时器 (初始等待 1 个 RTO)
+            pcb->persist_timer_ms = pcb->rto;
+            pcb->persist_backoff = 1;
+            printf("[ZWP] Zero window detected! Persist timer started (%u ms).\n", pcb->persist_timer_ms);
+        }
+        return; // 拦截正常的数据发送逻辑，直接返回
+    }
+
     // 只要有数据且对方窗口允许，就一直发
     while (unsent > 0 && available_wnd > 0) {
         int send_len = unsent;
@@ -127,4 +139,18 @@ void tcp_close(struct tcp_pcb *pcb) {
         pcb->state = TCP_LAST_ACK;
         tcp_send_ctrl(pcb, TCP_FIN | TCP_ACK);
     }
+}
+
+// --- [新增] 零窗口探测包发送 ---
+void tcp_zero_window_probe(struct tcp_pcb *pcb) {
+    // 黑科技：为了强制让接收端回复带有最新 Window 信息的 ACK，
+    // 我们故意发送一个 Seq 为 snd_nxt - 1 的空包（对于接收端来说是个合法的旧包）。
+    uint32_t probe_seq = pcb->snd_nxt;
+    if (pcb->snd_nxt > pcb->snd_una) {
+        probe_seq = pcb->snd_nxt - 1; 
+    }
+    
+    printf("[ZWP] Sending Window Probe at seq %u...\n", probe_seq);
+    // 发送纯 ACK，不带数据，强制对方响应
+    tcp_output(pcb, probe_seq, TCP_ACK, NULL, 0);
 }

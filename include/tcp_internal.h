@@ -35,4 +35,7 @@ uint16_t tcp_calc_checksum(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, uint8_t
 // 获取系统当前时间戳 (毫秒)
 uint32_t sys_now(void);
 
+// [新增] 触发零窗口探测包
+void tcp_zero_window_probe(struct tcp_pcb *pcb);
+
 #endif

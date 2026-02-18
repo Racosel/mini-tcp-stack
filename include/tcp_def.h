@@ -80,6 +80,10 @@ struct tcp_pcb {
     // --- [新增] 乱序缓存链表头指针 ---
     struct tcp_ooo_node *ooo_head;
 
+    // --- [新增] 零窗口探测与坚持定时器 (Zero Window Probe) ---
+    uint32_t persist_timer_ms; // 坚持定时器剩余时间 (毫秒)
+    uint32_t persist_backoff;  // 退避系数 (1, 2, 4, 8...)
+
     // --- 接收端滑动窗口 (Rx Window) ---
     uint32_t rcv_nxt;    // 期望收到的下一个序号
     uint32_t rcv_wnd;    // 本地的接收窗口大小

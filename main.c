@@ -23,9 +23,9 @@ int main() {
     FILE *fp_send = NULL; // 原来的 fp 改名为 fp_send 显得更清晰
     
     // --- [新增] 准备接收文件的指针 ---
-    FILE *fp_recv = fopen("recv_from_h2.dat", "wb"); 
+    FILE *fp_recv = fopen("test_recv.dat", "wb"); 
     if (!fp_recv) {
-        perror("[App] Failed to open recv_from_h2.dat");
+        perror("[App] Failed to open test_recv.dat");
         // 即使打开失败也可以继续，只是不落盘而已
     }
 
@@ -82,9 +82,11 @@ int main() {
                 int to_read = (unread_len > sizeof(read_buffer)) ? sizeof(read_buffer) : unread_len;
                 
                 // 从 TCP 接收缓冲区读出数据（这会腾出底层接收窗口 pcb->rcv_wnd）
+                /////////////////////
                 rb_read(pcb->rcv_buf, read_buffer, to_read);
                 
                 // 写入磁盘文件
+                ////////////////////
                 fwrite(read_buffer, 1, to_read, fp_recv);
                 fflush(fp_recv); // 强制刷盘，防止进程异常退出时数据丢失
                 
