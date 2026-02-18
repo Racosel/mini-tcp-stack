@@ -59,52 +59,69 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
         case TCP_ESTABLISHED:
             if (flags & TCP_ACK) {
                 pcb->snd_wnd = ntohs(tcph->window);
+
+                // --- 情况 A: 收到新的 ACK (New ACK) ---
                 if (ack > pcb->snd_una && ack <= pcb->snd_nxt) {
-                    uint32_t acked = ack - pcb->snd_una;
-                    
-                    // --- 【修复开始】分块读取，防止栈溢出 ---
-                    int to_pop = (acked > (uint32_t)rb_used_space(pcb->snd_buf)) ? rb_used_space(pcb->snd_buf) : acked;
-                    while (to_pop > 0) {
-                        uint8_t dummy[1500];
-                        int chunk = (to_pop > 1500) ? 1500 : to_pop;
-                        rb_read(pcb->snd_buf, dummy, chunk);
-                        to_pop -= chunk;
+                    // [新增] 只要收到新数据确认，重置 dupacks 计数
+                    pcb->dupacks = 0;
+
+                    // ... (保留 4.1/4.2 原有的处理逻辑：计算 acked, 更新 cwnd, 释放 buf, 重置 RTO 等) ...
+                    // 请确保把你之前写的 4.1(拥塞控制) 和 4.2(RTO重置) 的代码都保留在下面这个块里
+                    {
+                        uint32_t acked = ack - pcb->snd_una;
+                        
+                        // 拥塞控制状态机 (4.1 代码)
+                        if (pcb->cwnd < pcb->ssthresh) {
+                            pcb->cwnd += TCP_MSS; 
+                        } else {
+                            uint32_t inc = (TCP_MSS * TCP_MSS) / pcb->cwnd;
+                            pcb->cwnd += (inc < 1) ? 1 : inc;
+                        }
+
+                        // 释放缓冲区 (3.3 代码)
+                        int to_pop = (acked > (uint32_t)rb_used_space(pcb->snd_buf)) ? rb_used_space(pcb->snd_buf) : acked;
+                        while(to_pop > 0) {
+                             uint8_t d[1500];
+                             int c = (to_pop > 1500) ? 1500 : to_pop;
+                             rb_read(pcb->snd_buf, d, c);
+                             to_pop -= c;
+                        }
+
+                        pcb->snd_una = ack;
+                        
+                        // 重置 RTO (4.2 代码)
+                        if (pcb->rto != 1000) {
+                            pcb->rto = 1000;
+                            printf("[Timer] Network recovered. RTO reset to 1000 ms\n");
+                        }
+                        
+                        pcb->timer_ms = (pcb->snd_una == pcb->snd_nxt) ? 0 : pcb->rto;
+                        tcp_push(pcb);
                     }
-                    // --- 【修复结束】 ---
+                } 
+                // --- [新增] 情况 B: 收到重复 ACK (Duplicate ACK) ---
+                else if (ack == pcb->snd_una) {
+                    // 只有当窗口内有数据未确认时，DupACK 才有意义
+                    if (rb_used_space(pcb->snd_buf) > 0) {
+                        pcb->dupacks++;
+                        printf("[Fast ReTx] DupACK detected (%d/3). Seq: %u\n", pcb->dupacks, ack);
 
-
-                    // --- [新增] 拥塞控制状态机 ---
-                    if (pcb->cwnd < pcb->ssthresh) {
-                        // 1. 慢启动阶段 (Slow Start): 指数增长
-                        // 每收到一个 ACK，cwnd 增加一个 MSS
-                        pcb->cwnd += TCP_MSS;
-                        printf("[Congestion] Slow Start: cwnd -> %u\n", pcb->cwnd);
-                    } else {
-                        // 2. 拥塞避免阶段 (Congestion Avoidance): 线性增长
-                        // 每个 RTT 增加一个 MSS。
-                        // 近似算法：每收到一个 ACK，增加 MSS * MSS / cwnd
-                        uint32_t increment = (TCP_MSS * TCP_MSS) / pcb->cwnd;
-                        if (increment < 1) increment = 1; // 至少加 1 字节
-                        pcb->cwnd += increment;
-                        printf("[Congestion] Avoidance: cwnd -> %u\n", pcb->cwnd);
+                        // 触发快速重传阈值
+                        if (pcb->dupacks == 3) {
+                            printf(">>> [Fast ReTx] TRIGGERED! Retransmitting seq %u immediately! <<<\n", ack);
+                            
+                            // 1. 立即重传丢失的包 (复用 tcp_retransmit)
+                            // 注意：这里复用 tcp_retransmit 会副作用导致 cwnd=1 (Tahoe 算法行为)
+                            // 虽然 Reno 算法建议 cwnd 减半，但在学生实现中，直接重传最稳健。
+                            tcp_retransmit(pcb);
+                            
+                            // 2. 关键：重置定时器，防止 RTO 再次触发导致双重重传
+                            pcb->timer_ms = pcb->rto;
+                        }
                     }
-                    // ---------------------------
-                    
-                    pcb->snd_una = ack; // (这是原有的代码)
-
-                    // [新增] 收到有效的新 ACK，说明网络恢复健康，重置 RTO
-                    if (pcb->rto != 1000) {
-                        pcb->rto = 1000;
-                        printf("[Timer] Network recovered. RTO reset to 1000 ms\n");
-                    }
-
-                    // ... (后续的 timer_ms 设置和 tcp_push) ...
-
-                    pcb->timer_ms = (pcb->snd_una == pcb->snd_nxt) ? 0 : pcb->rto;
-                    tcp_push(pcb);
                 }
             }
-            
+
             // 处理接收数据
             if (payload_len > 0) {
                 tcp_process_payload(pcb, seq, payload, payload_len);

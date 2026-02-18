@@ -57,7 +57,10 @@ struct tcp_pcb {
     // --- 拥塞控制 (Congestion Control) ---
     uint32_t cwnd;       // 拥塞窗口 (Congestion Window)
     uint32_t ssthresh;   // 慢启动阈值 (Slow Start Threshold)
-    
+
+    // [新增] 重复 ACK 计数器
+    uint8_t dupacks;
+
     // --- 接收端滑动窗口 (Rx Window) ---
     uint32_t rcv_nxt;    // 期望收到的下一个序号
     uint32_t rcv_wnd;    // 本地的接收窗口大小
