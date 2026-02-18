@@ -65,6 +65,28 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
                     // [新增] 只要收到新数据确认，重置 dupacks 计数
                     pcb->dupacks = 0;
 
+                    // --- [新增] 动态 RTT 估算与 RTO 更新 (Jacobson/Karels 算法) ---
+                    // 如果正在测量，且当前收到的 ACK 涵盖了我们测量的包
+                    if (pcb->rtt_ts != 0 && ack >= pcb->rtt_seq) {
+                        uint32_t sample_rtt = sys_now() - pcb->rtt_ts;
+                        pcb->rtt_ts = 0; // 测量完成，允许测下一个包
+
+                        if (pcb->srtt == 0) {
+                            // 第一次测量
+                            pcb->srtt = sample_rtt;
+                            pcb->rttvar = sample_rtt / 2;
+                        } else {
+                            // 后续平滑计算 (避免浮点数，使用移位/乘除近似)
+                            // RTTVAR = (3/4)*RTTVAR + (1/4)*|SRTT - Sample|
+                            uint32_t delta = (pcb->srtt > sample_rtt) ? (pcb->srtt - sample_rtt) : (sample_rtt - pcb->srtt);
+                            pcb->rttvar = (3 * pcb->rttvar + delta) / 4;
+                            // SRTT = (7/8)*SRTT + (1/8)*Sample
+                            pcb->srtt = (7 * pcb->srtt + sample_rtt) / 8;
+                        }
+                        
+                        printf("[RTT] Sample: %u ms, SRTT: %u ms, RTTVAR: %u\n", sample_rtt, pcb->srtt, pcb->rttvar);
+                    }
+
                     // ... (保留 4.1/4.2 原有的处理逻辑：计算 acked, 更新 cwnd, 释放 buf, 重置 RTO 等) ...
                     // 请确保把你之前写的 4.1(拥塞控制) 和 4.2(RTO重置) 的代码都保留在下面这个块里
                     {
@@ -89,10 +111,14 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
 
                         pcb->snd_una = ack;
                         
-                        // 重置 RTO (4.2 代码)
-                        if (pcb->rto != 1000) {
-                            pcb->rto = 1000;
-                            printf("[Timer] Network recovered. RTO reset to 1000 ms\n");
+                        // --- [修改] 移除 4.2 里写死的 pcb->rto = 1000，改为动态健康 RTO ---
+                        uint32_t healthy_rto = (pcb->srtt == 0) ? 1000 : (pcb->srtt + 4 * pcb->rttvar);
+                        if (healthy_rto < TCP_MIN_RTO) healthy_rto = TCP_MIN_RTO;
+                        if (healthy_rto > TCP_MAX_RTO) healthy_rto = TCP_MAX_RTO;
+                        
+                        if (pcb->rto != healthy_rto) {
+                            pcb->rto = healthy_rto;
+                            // printf("[Timer] RTO adjusted to %u ms\n", pcb->rto); // 可选：打印查看
                         }
                         
                         pcb->timer_ms = (pcb->snd_una == pcb->snd_nxt) ? 0 : pcb->rto;
@@ -109,6 +135,9 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
                         // 触发快速重传阈值
                         if (pcb->dupacks == 3) {
                             printf(">>> [Fast ReTx] TRIGGERED! Retransmitting seq %u immediately! <<<\n", ack);
+                            
+                            // [新增] 快速重传也属于重传，废弃当前的 RTT 测量
+                            pcb->rtt_ts = 0;
                             
                             // 1. 立即重传丢失的包 (复用 tcp_retransmit)
                             // 注意：这里复用 tcp_retransmit 会副作用导致 cwnd=1 (Tahoe 算法行为)

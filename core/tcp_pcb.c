@@ -17,6 +17,12 @@ struct tcp_pcb *tcp_pcb_new() {
     pcb->cwnd = TCP_MSS;      // 初始只发 1 个 MSS (慢启动)
     pcb->ssthresh = 0xFFFF;   // 初始阈值设为无穷大 (65535)
 
+    // [新增] 初始化 RTT 变量
+    pcb->rto = 1000;   // 在获得第一个采样前，保持默认 1000ms
+    pcb->rtt_ts = 0;   // 0 表示当前没有进行 RTT 测量
+    pcb->srtt = 0;
+    pcb->rttvar = 0;
+
     // 初始化窗口大小
     pcb->rcv_wnd = rb_free_space(pcb->rcv_buf); // 动态获取
     pcb->snd_wnd = 1024; // 初始假设对方有窗口，握手后更新

@@ -32,4 +32,7 @@ int net_recv(void *buf, int max_len);
 // utils/checksum.c
 uint16_t tcp_calc_checksum(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, uint8_t *data, int len);
 
+// 获取系统当前时间戳 (毫秒)
+uint32_t sys_now(void);
+
 #endif

@@ -51,6 +51,12 @@ void tcp_push(struct tcp_pcb *pcb) {
         uint8_t buf[1500];
         rb_peek_offset(pcb->snd_buf, in_flight, buf, send_len);
 
+        // --- [新增] 发起 RTT 测量 (每次只测量一个正在飞行的包) ---
+        if (pcb->rtt_ts == 0) {
+            pcb->rtt_seq = pcb->snd_nxt + send_len; // 期望收到大于等于这个数的 ACK
+            pcb->rtt_ts = sys_now();
+        }
+        
         tcp_output(pcb, pcb->snd_nxt, TCP_PSH | TCP_ACK, buf, send_len);
 
         pcb->snd_nxt += send_len;
@@ -84,6 +90,10 @@ void tcp_send_ctrl(struct tcp_pcb *pcb, uint8_t flags) {
 void tcp_retransmit(struct tcp_pcb *pcb) {
     printf("[RTO] Timeout! Retransmitting from seq %u...\n", pcb->snd_una);
     
+    // --- [新增] Karn 算法：发生重传时，废弃当前的 RTT 测量 ---
+    pcb->rtt_ts = 0;
+        
+    // ... 原有的拥塞惩罚代码 ...
     // --- [新增] 超时惩罚：进入慢启动 ---
     pcb->ssthresh = pcb->cwnd / 2;
     if (pcb->ssthresh < 2 * TCP_MSS) pcb->ssthresh = 2 * TCP_MSS; // 至少保留 2 MSS

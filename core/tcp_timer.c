@@ -1,5 +1,14 @@
 #include "tcp_internal.h"
 #include <stdio.h>
+#include <sys/time.h> // [新增] 引入 gettimeofday
+#include <stddef.h>
+
+// [新增] 获取当前毫秒级时间戳
+uint32_t sys_now(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint32_t)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
 
 void tcp_timer_tick(struct tcp_pcb *pcb, int ms_elapsed) {
     if (pcb->snd_una != pcb->snd_nxt && pcb->timer_ms > 0) {

@@ -23,6 +23,8 @@ typedef enum {
 #define TCP_MSS 1000
 // [新增] RTO 最大限制为 60秒
 #define TCP_MAX_RTO 60000
+// [新增] 最小 RTO 限制 (200ms)
+#define TCP_MIN_RTO 200
 
 // 自定义 TCP 头部
 struct my_tcp_hdr {
@@ -60,6 +62,12 @@ struct tcp_pcb {
 
     // [新增] 重复 ACK 计数器
     uint8_t dupacks;
+
+    // --- [新增] 动态 RTT 估计 (Jacobson/Karels) ---
+    uint32_t rtt_seq;   // 正在测量的目标 ACK 序号
+    uint32_t rtt_ts;    // 发起测量时的时间戳 (ms)。为 0 表示当前未测量
+    uint32_t srtt;      // 平滑 RTT (Smoothed RTT)
+    uint32_t rttvar;    // RTT 波动值 (RTT Variance)
 
     // --- 接收端滑动窗口 (Rx Window) ---
     uint32_t rcv_nxt;    // 期望收到的下一个序号
