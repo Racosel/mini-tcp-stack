@@ -23,6 +23,10 @@ struct tcp_pcb *tcp_pcb_new() {
     pcb->srtt = 0;
     pcb->rttvar = 0;
 
+    // --- [新增] 初始化乱序链表为空 ---
+    pcb->ooo_head = NULL; 
+    pcb->rcv_nxt = 0;
+
     // 初始化窗口大小
     pcb->rcv_wnd = rb_free_space(pcb->rcv_buf); // 动态获取
     pcb->snd_wnd = 1024; // 初始假设对方有窗口，握手后更新

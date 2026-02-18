@@ -26,6 +26,14 @@ typedef enum {
 // [新增] 最小 RTO 限制 (200ms)
 #define TCP_MIN_RTO 200
 
+// --- [新增] 乱序缓存链表节点 ---
+struct tcp_ooo_node {
+    uint32_t seq;
+    uint32_t len;
+    uint8_t *data;
+    struct tcp_ooo_node *next;
+};
+
 // 自定义 TCP 头部
 struct my_tcp_hdr {
     uint16_t src_port;
@@ -68,6 +76,9 @@ struct tcp_pcb {
     uint32_t rtt_ts;    // 发起测量时的时间戳 (ms)。为 0 表示当前未测量
     uint32_t srtt;      // 平滑 RTT (Smoothed RTT)
     uint32_t rttvar;    // RTT 波动值 (RTT Variance)
+
+    // --- [新增] 乱序缓存链表头指针 ---
+    struct tcp_ooo_node *ooo_head;
 
     // --- 接收端滑动窗口 (Rx Window) ---
     uint32_t rcv_nxt;    // 期望收到的下一个序号

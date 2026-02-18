@@ -1,5 +1,7 @@
 #include "tcp_internal.h"
 #include <stdio.h>
+#include <stdlib.h> // [新增] 用于 malloc, free
+#include <string.h> // [新增] 用于 memcpy
 
 // 处理接收到的数据负载
 static void tcp_process_payload(struct tcp_pcb *pcb, uint32_t seq, uint8_t *data, int len) {
@@ -138,7 +140,7 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
                             
                             // [新增] 快速重传也属于重传，废弃当前的 RTT 测量
                             pcb->rtt_ts = 0;
-                            
+
                             // 1. 立即重传丢失的包 (复用 tcp_retransmit)
                             // 注意：这里复用 tcp_retransmit 会副作用导致 cwnd=1 (Tahoe 算法行为)
                             // 虽然 Reno 算法建议 cwnd 减半，但在学生实现中，直接重传最稳健。
@@ -153,7 +155,85 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
 
             // 处理接收数据
             if (payload_len > 0) {
-                tcp_process_payload(pcb, seq, payload, payload_len);
+
+                printf("[RX] Arrived Seq: %u, Expected (rcv_nxt): %u, Len: %u\n", seq, pcb->rcv_nxt, payload_len);
+
+                if (seq == pcb->rcv_nxt) {
+                    // ---------------------------------------------------------
+                    // 1. 期望的包到达 (In-Order)
+                    // ---------------------------------------------------------
+                    rb_write(pcb->rcv_buf, payload, payload_len);
+                    pcb->rcv_nxt += payload_len;
+
+                    // --- [新增] 2. 检查乱序链表，看是否有后续包可以顺带交付 (Reassembly) ---
+                    while (pcb->ooo_head != NULL && pcb->ooo_head->seq == pcb->rcv_nxt) {
+                        struct tcp_ooo_node *node = pcb->ooo_head;
+                        
+                        // 写入缓冲区并推进 rcv_nxt
+                        rb_write(pcb->rcv_buf, node->data, node->len);
+                        pcb->rcv_nxt += node->len;
+                        
+                        // 链表头指针后移，并释放当前节点内存 (极其重要，防止内存泄漏)
+                        pcb->ooo_head = node->next;
+                        printf("[OOO] Reassembled seq %u, len %u from buffer! New rcv_nxt: %u\n", node->seq, node->len, pcb->rcv_nxt);
+                        
+                        // --- [新增的严谨逻辑] 分步释放内存 ---
+                        free(node->data); // 1. 先释放动态分配的 payload 内存
+                        free(node);       // 2. 再释放链表节点本身的内存
+                        // -----------------------------------
+                    }
+
+                    // 统一发送最新的 ACK (此时可能因为上面的 while 循环，ACK 已经被极大地推进了！)
+                    tcp_output(pcb, pcb->snd_nxt, TCP_ACK, NULL, 0);
+
+                } else if (seq > pcb->rcv_nxt) {
+                    // ---------------------------------------------------------
+                    // --- [新增] 3. 乱序包到达：有序插入链表暂存 (Buffering) ---
+                    // ---------------------------------------------------------
+                    struct tcp_ooo_node *curr = pcb->ooo_head;
+                    struct tcp_ooo_node *prev = NULL;
+                    int is_duplicate = 0;
+
+                    // 遍历寻找插入位置 (保持链表按 seq 递增排序)，并去重
+                    while (curr != NULL) {
+                        if (curr->seq == seq) {
+                            is_duplicate = 1; // 已经存过这个包了
+                            break;
+                        }
+                        if (curr->seq > seq) {
+                            break; // 找到了插入点
+                        }
+                        prev = curr;
+                        curr = curr->next;
+                    }
+
+                    if (!is_duplicate) {
+                        struct tcp_ooo_node *new_node = (struct tcp_ooo_node *)malloc(sizeof(struct tcp_ooo_node));
+                        new_node->seq = seq;
+                        new_node->len = payload_len;
+                        // --- [新增的严谨逻辑] 按需精准分配内存 ---
+                        new_node->data = (uint8_t *)malloc(payload_len); 
+                        memcpy(new_node->data, payload, payload_len);
+                        // ----------------------------------------
+                        new_node->next = curr;
+
+                        if (prev == NULL) {
+                            pcb->ooo_head = new_node; // 插入到头部
+                        } else {
+                            prev->next = new_node;    // 插入到中间或尾部
+                        }
+                        printf("[OOO] Buffered out-of-order seq %u, len %u\n", seq, payload_len);
+                    }
+
+                    // 极度关键：乱序到达时，必须立刻回复当前的 rcv_nxt (产生 DupACK)，
+                    // 这样发送端才能收到 3 个 DupACK 触发快速重传！
+                    tcp_output(pcb, pcb->snd_nxt, TCP_ACK, NULL, 0);
+
+                } else {
+                    // 4. 收到旧的包 (seq < rcv_nxt)
+                    // 可能是重传延迟到达的，直接丢弃，但必须回复最新的 ACK
+                    tcp_output(pcb, pcb->snd_nxt, TCP_ACK, NULL, 0);
+                }
             }
             
             if (flags & TCP_FIN) {

@@ -39,7 +39,7 @@ clean:
 	rm -f $(OBJS) $(TARGET) test_rb *.o
 
 	@echo "--- Cleaning transitted files ---"
-	rm -f test_send.dat recv_test.dat
+	rm -f *.dat *.log
 	
 	@echo "--- Cleaning Mininet leftovers ---"
 # 清理 Mininet 拓扑残留
