@@ -90,7 +90,16 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
                     }
                     // ---------------------------
                     
-                    pcb->snd_una = ack;
+                    pcb->snd_una = ack; // (这是原有的代码)
+
+                    // [新增] 收到有效的新 ACK，说明网络恢复健康，重置 RTO
+                    if (pcb->rto != 1000) {
+                        pcb->rto = 1000;
+                        printf("[Timer] Network recovered. RTO reset to 1000 ms\n");
+                    }
+
+                    // ... (后续的 timer_ms 设置和 tcp_push) ...
+
                     pcb->timer_ms = (pcb->snd_una == pcb->snd_nxt) ? 0 : pcb->rto;
                     tcp_push(pcb);
                 }

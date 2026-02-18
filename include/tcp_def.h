@@ -21,6 +21,8 @@ typedef enum {
 
 // 统一定义最大报文段大小，方便各文件引用
 #define TCP_MSS 1000
+// [新增] RTO 最大限制为 60秒
+#define TCP_MAX_RTO 60000
 
 // 自定义 TCP 头部
 struct my_tcp_hdr {
