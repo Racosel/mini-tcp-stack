@@ -8,6 +8,7 @@
 void tcp_output(struct tcp_pcb *pcb, uint32_t seq, uint8_t flags, uint8_t *data, int len) {
     uint8_t buf[1500];
     struct my_tcp_hdr *tcph = (struct my_tcp_hdr *)buf;
+    memset(buf, 0, sizeof(struct my_tcp_hdr));
     
     tcph->src_port = pcb->local_port;
     tcph->dst_port = pcb->remote_port;
@@ -24,6 +25,10 @@ void tcp_output(struct tcp_pcb *pcb, uint32_t seq, uint8_t flags, uint8_t *data,
     
     tcph->cksum = tcp_calc_checksum(pcb, tcph, data, len);
     net_send(pcb, buf, sizeof(struct my_tcp_hdr) + len);
+
+    printf("[DEBUG] Sending OUT (ACK): ack_seq=%u, my_window=%u\n", 
+       pcb->rcv_nxt, 
+       rb_free_space(pcb->rcv_buf));
     
     printf("[OUT] Flags:0x%02X Seq:%u Len:%d Wnd:%u\n", flags, seq, len, pcb->rcv_wnd);
 }

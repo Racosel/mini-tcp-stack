@@ -98,7 +98,14 @@ void tcp_process_state(struct tcp_pcb *pcb, struct my_tcp_hdr *tcph, int len) {
             
             // 处理接收数据
             if (payload_len > 0) {
-                tcp_process_payload(pcb, seq, payload, payload_len);
+                if (seq == pcb->rcv_nxt) {
+                    tcp_process_payload(pcb, seq, payload, payload_len);
+                } else {
+                    // --- [极其关键的兜底] ---
+                    // 无论是收到乱序包，还是 Linux 发来的零窗口试探包(旧包)，
+                    // 必须无条件向对方回复最新的 ACK 和 Window！
+                    tcp_output(pcb, pcb->snd_nxt, TCP_ACK, NULL, 0);
+                }
             }
             
             if (flags & TCP_FIN) {

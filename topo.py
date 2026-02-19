@@ -23,7 +23,7 @@ def run():
     
     info('*** Creating links (10Mbps, 10ms delay)\n')
     # 修改 topo.py 里的 addLink
-    net.addLink(h1, s1, bw=10, delay='10ms', loss=5) # 增加 5% 丢包
+    net.addLink(h1, s1, bw=10, delay='10ms', loss=5)
     net.addLink(h2, s1, bw=10, delay='10ms')
     
     net.start()
