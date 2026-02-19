@@ -7,6 +7,7 @@
 // 1. 底层发送
 void tcp_output(struct tcp_pcb *pcb, uint32_t seq, uint8_t flags, uint8_t *data, int len) {
     uint8_t buf[1500];
+    memset(buf, 0, sizeof(struct my_tcp_hdr));
     struct my_tcp_hdr *tcph = (struct my_tcp_hdr *)buf;
     
     tcph->src_port = pcb->local_port;
