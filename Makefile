@@ -1,15 +1,24 @@
 CC = gcc
 CFLAGS = -Wall -g -I./include
-TARGET = mini_tcp
-SRC_DIRS = . core adapter utils
-SRCS = $(foreach dir, $(SRC_DIRS), $(wildcard $(dir)/*.c))
-OBJS = $(SRCS:.c=.o)
 
-all: $(TARGET)
-	dd if=/dev/urandom of=test_send.dat bs=1M count=1
-	dd if=/dev/urandom of=linux_send.dat bs=1M count=1
+# 1. 定义共享的底层源码和目标文件
+CORE_DIRS = core utils utils adapter
+CORE_SRCS = $(foreach dir, $(CORE_DIRS), $(wildcard $(dir)/*.c))
+CORE_OBJS = $(CORE_SRCS:.c=.o)
 
-$(TARGET): $(OBJS)
+# 2. 定义两个最终的可执行文件名
+TARGETS = mini_tcp_send mini_tcp_recv
+
+all: $(TARGETS)
+	dd if=/dev/urandom of=test_send.dat bs=1K count=100
+	dd if=/dev/urandom of=linux_send.dat bs=1K count=100
+
+# 规则：编译发送端 (链接共享底层 + 发送端应用层)
+mini_tcp_send: $(CORE_OBJS) app_sender.o
+	$(CC) $(CFLAGS) -o $@ $^
+
+# 规则：编译接收端 (链接共享底层 + 接收端应用层)
+mini_tcp_recv: $(CORE_OBJS) app_receiver.o
 	$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c
@@ -40,7 +49,7 @@ clean:
 	rm -f $(OBJS) $(TARGET) test_rb *.o
 
 	@echo "--- Cleaning transitted files ---"
-	rm -f test_send.dat recv_test.dat
+	rm -f *.dat
 	
 	@echo "--- Cleaning Mininet leftovers ---"
 # 清理 Mininet 拓扑残留
